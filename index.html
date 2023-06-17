@@ -30,9 +30,15 @@
 
 			varying vec3 vColor;
 
+			vec3 col(float k) {
+				float T = k*32000.;
+				vec3 c = vec3(1.,3.375,8.)/(exp((19e3*vec3(1.,1.5,2.)/T)) - 1.); // Planck law
+				return c / max(c.r,max(c.g,c.b));  // chrominance
+			}
+
 			void main() {
 
-				vColor = ca;
+				vColor = col(ca.r);
 
 				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
 
@@ -62,7 +68,6 @@
 		</script>
 		
 		<script>
-		
 			function randomRangeFloat(input, min, max)
 			{
 				return input * ((max - min) + 1) + min;
@@ -77,16 +82,31 @@
 			{
 				let rng = new alea(seed);
 				
-				let temperature = randomRangeFloat(rng.double() / 10, 2000, 50000);
+				let temperature = randomRangeFloat(rng.double() / 10, 2000, 40000);
 				let size = randomRange(rng, 20, 50);
 				let num_planets = randomRange(rng, 0, 5);
 				let name = "star";//generateNameFromWordList(rng.int32(), starNameDB);
 				
+				// Constants for the spiral arms
+				const arms = 5; // Number of arms
+				const starsPerArm = 1000;
+				const starIndex = seed >> 8;
+				let arm = ~~(starIndex / starsPerArm);
+				let arm_index = starIndex - arm * starsPerArm;
+				let armAngle = 270 / arms;
+				let angle = arm_index / 100 + (armAngle * (arm + 1));
+				let radius = arm_index / 40;
+
+				let x = radius * Math.cos(angle) + rng.double() * 2;
+				let y = rng.double() / 5 + rng.double();
+				let z = radius * Math.sin(angle) + rng.double() * 2;
+
 				return {
 					size: size,
 					temperature: temperature,
 					seed: seed,
 					name: name,
+					position: {x:x, y:y, z:z},
 					planets: new Array(num_planets)
 				};
 			}
@@ -215,27 +235,13 @@
 				var starsPerArm = NUM_STARS / arms;
 				var armAngle = 270 / arms;
 				
-				// Create the galaxy structure
-				for (arm = 0; arm < arms; arm++) {
-					for (i = 0; i < starsPerArm; i++) {
-
-						angle = i / 100 + (armAngle * (arm + 1));
-						
-						let starIndex = galaxy.vertices.length;
-						let starSeed = starIndex << 8 | GALAXY_SEED;
-						let starData = makeStarBasic(starSeed);
-						starDB[starIndex] = starData;
-						
-						let rng = new alea(starSeed);
-
-						radius = i / 40;
-
-						x = radius * Math.cos(angle) + rng.double()*2;
-						y = rng.double() / 5 + rng.double();
-						z = radius * Math.sin(angle) + rng.double()*2;
-
-						galaxy.vertices.push(new THREE.Vector3(x, y, z));
-					}
+				for (let i = 0; i < NUM_STARS; ++i) {
+					let starSeed = i << 8 | GALAXY_SEED;
+					//let starSeed = i;
+					let starData = makeStarBasic(starSeed);
+					starDB[i] = starData;
+					let p = new THREE.Vector3(starData.position.x, starData.position.y, starData.position.z);
+					galaxy.vertices.push(p);
 				}
 
 				// Create the particle system
@@ -253,7 +259,8 @@
 				for( var v = 0; v < vertices.length; v++ ) {
 					let starData = starDB[v];
 					values_size[ v ] = starData.size / 100.0;
-					values_color[ v ] = new THREE.Color( calculateStarColor(starData.temperature) );
+					values_color[ v ] = new THREE.Color( starData.temperature/16000.0, 1, 1 );
+					//values_color[ v ] = new THREE.Color( calculateStarColor(starData.temperature) );
 				}
 
 				// Add the particle system to the scene
