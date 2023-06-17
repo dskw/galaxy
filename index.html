@@ -18,6 +18,7 @@
 	<body>
 		<div id="message"></div>
 		<div id="container"></div>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.5/lib/alea.min.js"></script>
 		<script src="js/three.min.js"></script>
 		<script src="js/OrbitControls.js"></script>
 		<script src="js/Detector.js"></script>
@@ -59,6 +60,82 @@
 			}
 
 		</script>
+		
+		<script>
+		
+			function randomRangeFloat(input, min, max)
+			{
+				return input * ((max - min) + 1) + min;
+			}
+			
+			function randomRange(rng, min, max)
+			{
+				return ~~(randomRangeFloat(rng.double(), min, max));
+			}
+			
+			function makeStarBasic(seed)
+			{
+				let rng = new alea(seed);
+				
+				let temperature = randomRangeFloat(rng.double() / 10, 2000, 50000);
+				let size = randomRange(rng, 20, 50);
+				let num_planets = randomRange(rng, 0, 5);
+				let name = "star";//generateNameFromWordList(rng.int32(), starNameDB);
+				
+				return {
+					size: size,
+					temperature: temperature,
+					seed: seed,
+					name: name,
+					planets: new Array(num_planets)
+				};
+			}
+			
+			
+			function calculateStarColor(temperature)
+			{
+				const b = 2.898e-3; // Wien's displacement constant in meters per Kelvin
+
+				// Calculate the wavelength at which the star emits the most intensity
+				const wavelength = b / temperature;
+
+				// Map the wavelength to an RGB color
+				let red, green, blue;
+
+				if (wavelength < 450e-9) {
+					red = 0;
+					green = 0;
+					blue = 255;
+				} else if (wavelength < 495e-9) {
+					red = 0;
+					green = Math.round((wavelength - 450e-9) / (495e-9 - 450e-9) * 255);
+					blue = 255;
+				} else if (wavelength < 520e-9) {
+					red = 0;
+					green = 255;
+					blue = Math.round((520e-9 - wavelength) / (520e-9 - 495e-9) * 255);
+				} else if (wavelength < 565e-9) {
+					red = Math.round((wavelength - 520e-9) / (565e-9 - 520e-9) * 255);
+					green = 255;
+					blue = 0;
+				} else if (wavelength < 590e-9) {
+					red = 255;
+					green = Math.round((590e-9 - wavelength) / (590e-9 - 565e-9) * 255);
+					blue = 0;
+				} else if (wavelength < 620e-9) {
+					red = 255;
+					green = 0;
+					blue = 0;
+				} else {
+					red = 255;
+					green = 0;
+					blue = 0;
+				}
+
+				//return [ red, green, blue ];
+				return ((1 << 24) | ((red << 16) | (green << 8) | blue));
+			}
+		</script>
 
 		<script>
 
@@ -70,6 +147,13 @@
 			camera, scene, renderer, particleSystem;
 
 			var PI2 = Math.PI * 2;
+			
+			const GALAXY_SEED = 0;
+			const NUM_STARS = 5000;
+			var starDB = [];
+
+
+
 
 			init();
 			animate();
@@ -127,32 +211,30 @@
 
 				// Galaxy properties
 				var galaxy = new THREE.Geometry();
-				var starsPerArm = 1000;
 				var arms = 5;
+				var starsPerArm = NUM_STARS / arms;
 				var armAngle = 270 / arms;
-
+				
 				// Create the galaxy structure
 				for (arm = 0; arm < arms; arm++) {
-					for (i = 0; i <= starsPerArm; i++) {
+					for (i = 0; i < starsPerArm; i++) {
+
+						angle = i / 100 + (armAngle * (arm + 1));
+						
+						let starIndex = galaxy.vertices.length;
+						let starSeed = starIndex << 8 | GALAXY_SEED;
+						let starData = makeStarBasic(starSeed);
+						starDB[starIndex] = starData;
+						
+						let rng = new alea(starSeed);
 
 						radius = i / 40;
-						angle = i / 100 + (armAngle * (arm + 1));
 
-						x = radius * Math.cos(angle) + rand();
-						y = rand() / 5;
-						z = radius * Math.sin(angle) + rand();
+						x = radius * Math.cos(angle) + rng.double()*2;
+						y = rng.double() / 5 + rng.double();
+						z = radius * Math.sin(angle) + rng.double()*2;
 
-						// Add stars
-						randResult = Math.random() * (starsPerArm);
-						if(randResult < i*i) {
-							galaxy.vertices.push(new THREE.Vector3(x + rand(), y + rand(), z + rand()));
-						}
-
-						// Add about 50% more stars with some position variation for a better result
 						galaxy.vertices.push(new THREE.Vector3(x, y, z));
-						if(rand() >= 0) {
-							galaxy.vertices.push(new THREE.Vector3(x + rand(), y + rand(), z + rand()));
-						}
 					}
 				}
 
@@ -169,11 +251,9 @@
 
 				// Color variation
 				for( var v = 0; v < vertices.length; v++ ) {
-
-					values_size[ v ] = 0.2 + rand();
-					values_color[ v ] = new THREE.Color( 0xffffff );
-					var starType = Math.random();
-					values_color[ v ].setRGB(1, 1, 1);
+					let starData = starDB[v];
+					values_size[ v ] = starData.size / 100.0;
+					values_color[ v ] = new THREE.Color( calculateStarColor(starData.temperature) );
 				}
 
 				// Add the particle system to the scene
