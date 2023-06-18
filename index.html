@@ -77,13 +77,13 @@
 			{
 				return ~~(randomRangeFloat(rng.double(), min, max));
 			}
-			
+
 			function makeStarBasic(seed)
 			{
 				let rng = new alea(seed);
 				
 				let temperature = randomRangeFloat(rng.double() / 10, 2000, 40000);
-				let size = randomRange(rng, 20, 50);
+				let size = randomRange(rng, 20, 50)*2;
 				let num_planets = randomRange(rng, 0, 5);
 				let name = "star";//generateNameFromWordList(rng.int32(), starNameDB);
 				
@@ -91,6 +91,9 @@
 				const arms = 5; // Number of arms
 				const starsPerArm = 1000;
 				const starIndex = seed >> 8;
+				const max_radius = (starsPerArm-1) / 40;
+				const max_distance = max_radius + 2;
+
 				let arm = ~~(starIndex / starsPerArm);
 				let arm_index = starIndex - arm * starsPerArm;
 				let armAngle = 270 / arms;
@@ -98,8 +101,10 @@
 				let radius = arm_index / 40;
 
 				let x = radius * Math.cos(angle) + rng.double() * 2;
-				let y = rng.double() / 5 + rng.double();
 				let z = radius * Math.sin(angle) + rng.double() * 2;
+
+				let distance = Math.sqrt(x * x + z * z);
+				let y = Math.expm1(1 - (distance / max_distance)) * (rng.double()*2-1);
 
 				return {
 					size: size,
@@ -312,7 +317,7 @@
 
 			function animate() {
 				
-				particleSystem.rotation.y += 0.0001;
+				//particleSystem.rotation.y += 0.0001;
 
 				controls.update();
 				requestAnimationFrame( animate );
