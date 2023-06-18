@@ -68,6 +68,8 @@
 		</script>
 		
 		<script>
+			const NUM_STARS = 5000;
+
 			function randomRangeFloat(input, min, max)
 			{
 				return input * ((max - min) + 1) + min;
@@ -99,12 +101,11 @@
 
 				// Calculate the position in the spiral
 				const numArms = 5;
-				const numStars = 5000;
 				const maxDist = 25;
 				const starIndex = seed >> 8;
 
 				let armIndex = starIndex % numArms;
-				let distanceRatio = Math.pow((starIndex / numStars), 3); // Squaring the ratio increases star density towards the center
+				let distanceRatio = Math.pow((starIndex / NUM_STARS), 3); // Squaring the ratio increases star density towards the center
 
 				// Spiral parameters
 				let spiralAngle = armIndex * (2 * Math.PI / numArms) + distanceRatio * 2 * Math.PI;
@@ -126,51 +127,6 @@
 					planets: new Array(num_planets)
 				};
 			}
-			
-			
-			function calculateStarColor(temperature)
-			{
-				const b = 2.898e-3; // Wien's displacement constant in meters per Kelvin
-
-				// Calculate the wavelength at which the star emits the most intensity
-				const wavelength = b / temperature;
-
-				// Map the wavelength to an RGB color
-				let red, green, blue;
-
-				if (wavelength < 450e-9) {
-					red = 0;
-					green = 0;
-					blue = 255;
-				} else if (wavelength < 495e-9) {
-					red = 0;
-					green = Math.round((wavelength - 450e-9) / (495e-9 - 450e-9) * 255);
-					blue = 255;
-				} else if (wavelength < 520e-9) {
-					red = 0;
-					green = 255;
-					blue = Math.round((520e-9 - wavelength) / (520e-9 - 495e-9) * 255);
-				} else if (wavelength < 565e-9) {
-					red = Math.round((wavelength - 520e-9) / (565e-9 - 520e-9) * 255);
-					green = 255;
-					blue = 0;
-				} else if (wavelength < 590e-9) {
-					red = 255;
-					green = Math.round((590e-9 - wavelength) / (590e-9 - 565e-9) * 255);
-					blue = 0;
-				} else if (wavelength < 620e-9) {
-					red = 255;
-					green = 0;
-					blue = 0;
-				} else {
-					red = 255;
-					green = 0;
-					blue = 0;
-				}
-
-				//return [ red, green, blue ];
-				return ((1 << 24) | ((red << 16) | (green << 8) | blue));
-			}
 		</script>
 
 		<script>
@@ -185,10 +141,7 @@
 			var PI2 = Math.PI * 2;
 			
 			const GALAXY_SEED = 0;
-			const NUM_STARS = 5000;
 			var starDB = [];
-
-
 
 
 			init();
@@ -247,9 +200,6 @@
 
 				// Galaxy properties
 				var galaxy = new THREE.Geometry();
-				var arms = 5;
-				var starsPerArm = NUM_STARS / arms;
-				var armAngle = 270 / arms;
 				
 				for (let i = 0; i < NUM_STARS; ++i) {
 					let starSeed = i << 8 | GALAXY_SEED;
@@ -276,7 +226,6 @@
 					let starData = starDB[v];
 					values_size[ v ] = starData.size / 100.0;
 					values_color[ v ] = new THREE.Color( starData.temperature/16000.0, 1, 1 );
-					//values_color[ v ] = new THREE.Color( calculateStarColor(starData.temperature) );
 				}
 
 				// Add the particle system to the scene
