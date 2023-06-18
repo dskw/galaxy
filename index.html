@@ -16,57 +16,22 @@
 		</style>
 	</head>
 	<body>
-		<div id="message"></div>
-		<div id="container"></div>
+		<canvas id="c"></canvas>
+
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.5/lib/alea.min.js"></script>
-		<script src="js/three.min.js"></script>
-		<script src="js/OrbitControls.js"></script>
-		<script src="js/Detector.js"></script>
-
-		<script type="x-shader/x-vertex" id="vertexshader">
-
-			attribute float size;
-			attribute vec3 ca;
-
-			varying vec3 vColor;
-
-			vec3 col(float k) {
-				float T = k*32000.;
-				vec3 c = vec3(1.,3.375,8.)/(exp((19e3*vec3(1.,1.5,2.)/T)) - 1.); // Planck law
-				return c / max(c.r,max(c.g,c.b));  // chrominance
-			}
-
-			void main() {
-
-				vColor = col(ca.r);
-
-				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
-
-				gl_PointSize = size;
-				gl_PointSize = size * ( 100.0 / length( mvPosition.xyz ) );
-
-				gl_Position = projectionMatrix * mvPosition;
-
-			}
-
-		</script>
-
-		<script type="x-shader/x-fragment" id="fragmentshader">
-
-			uniform vec3 color;
-			uniform sampler2D texture;
-
-			varying vec3 vColor;
-
-			void main() {
-
-				gl_FragColor = vec4( color * vColor, 1.0 );
-				gl_FragColor = gl_FragColor * texture2D( texture, gl_PointCoord );
-
-			}
-
-		</script>
+		<!-- Import maps polyfill -->
+		<!-- Remove this when import maps will be widely supported -->
+		<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
 		
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://unpkg.com/three@0.153.0/build/three.module.js",
+					"three/addons/": "https://unpkg.com/three@0.153.0/examples/jsm/"
+				}
+			}
+		</script>
+
 		<script>
 			const NUM_STARS = 5000;
 
@@ -95,7 +60,7 @@
 				let rng = new alea(seed);
 				
 				let temperature = randomRangeFloat(rng.double() / 10, 2000, 40000);
-				let size = randomRange(rng, 20, 50)*2;
+				let size = randomRange(rng, 20, 50);
 				let num_planets = randomRange(rng, 0, 5);
 				let name = "star";//generateNameFromWordList(rng.int32(), starNameDB);
 
@@ -129,19 +94,62 @@
 			}
 		</script>
 
-		<script>
 
-			var mouseX = 0, mouseY = 0,
+		<script type="x-shader/x-vertex" id="vertexshader">
 
-			windowHalfX = window.innerWidth / 2,
-			windowHalfY = window.innerHeight / 2,
+			attribute float size;
 
-			camera, scene, renderer, particleSystem;
+			varying vec3 vColor;
 
-			var PI2 = Math.PI * 2;
+			vec3 star_color(float k) {
+				float T = k*32000.;
+				vec3 c = vec3(1.,3.375,8.)/(exp((19e3*vec3(1.,1.5,2.)/T)) - 1.); // Planck law
+				return c / max(c.r,max(c.g,c.b));  // chrominance
+			}
+
+			void main() {
+				vColor = star_color(color.r);
+
+				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+
+				gl_PointSize = size * ( 300.0 / -mvPosition.z );
+				//gl_PointSize = size * ( 100.0 / length( mvPosition.xyz ) );
+
+				gl_Position = projectionMatrix * mvPosition;
+			}
+
+		</script>
+
+		<script type="x-shader/x-fragment" id="fragmentshader">
+
+			uniform sampler2D pointTexture;
+
+			varying vec3 vColor;
+
+			void main() {
+
+				gl_FragColor = vec4( vColor, 1.0 );
+
+				gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord );
+
+			}
+
+		</script>
+
+		<script type="module">
+			import * as THREE from 'three';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let controls, camera, scene, renderer, particleSystem, stats, raycaster;
+
+			// Create a 2D vector for the mouse position
+			var mouse = new THREE.Vector2();
+
+			const PI2 = Math.PI * 2;
 			
 			const GALAXY_SEED = 0;
-			var starDB = [];
+			let starDB = [];
 
 
 			init();
@@ -149,57 +157,65 @@
 
 			function init() {
 
-				var container, galaxy;
-
-				container = document.createElement('div');
-				document.body.appendChild(container);
+				const canvas = document.querySelector('#c');
+				stats = new Stats();
+				document.querySelector('body').appendChild( stats.dom );
 
 				//intialize camera
-				camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 10000 );
-				camera.position.z = 30;
-				camera.position.y = 30;
+				const fov = 75;
+				const aspect = window.innerWidth / window.innerHeight;
+				const near = 0.1;
+				const far = 10000;
+				camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+				camera.position.z = 20;
+				camera.position.y = 20;
 
 				// Add OrbitControls so that we can pan around with the mouse.
-				controls = new THREE.OrbitControls( camera );
+				controls = new OrbitControls(camera, canvas);
+				controls.update();
 				controls.addEventListener( 'change', render );
 
-
-				//initialize scene
 				scene = new THREE.Scene();
+				scene.background = new THREE.Color('black');
+
 				
 				// Render the scene.
-				renderer = Detector.webgl? new THREE.WebGLRenderer(): document.getElementById("message").textContent = "Your browser does not support WebGL.";
+  				renderer = new THREE.WebGLRenderer({antialias: true, canvas});
+				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
-				container.appendChild( renderer.domElement );
+
+				raycaster = new THREE.Raycaster();
+				// Add the event listener for the click event
+				renderer.domElement.addEventListener('click', onDocumentMouseClick, false);
 
 				// Generate the circle texture
 				var circleTexture = new THREE.Texture(generateCircleTexture());
 				circleTexture.needsUpdate = true;
 
 				// Set up the shaders
-				attributes = {
-					size: {	type: 'f', value: [] },
-					ca:   {	type: 'c', value: [] }
+				let uniforms = {
+					amplitude: { value: 1.0 },
+					color: { value: new THREE.Color( 0xffffff ) },
+					pointTexture: { value: circleTexture }
 				};
 
-				uniforms = {
-					amplitude: { type: "f", value: 1.0 },
-					color:     { type: "c", value: new THREE.Color( 0xffffff ) },
-					texture:   { type: "t", value: circleTexture },
-				};
-
-				uniforms.texture.value.wrapS = uniforms.texture.value.wrapT = THREE.RepeatWrapping;
+				uniforms.pointTexture.value.wrapS = uniforms.pointTexture.value.wrapT = THREE.RepeatWrapping;
 
 				var shaderMaterial = new THREE.ShaderMaterial( {
-					uniforms: 		uniforms,
-					attributes:     attributes,
-					vertexShader:   document.getElementById( 'vertexshader' ).textContent,
+					uniforms: uniforms,
+					vertexShader: document.getElementById( 'vertexshader' ).textContent,
 					fragmentShader: document.getElementById( 'fragmentshader' ).textContent,
-					transparent:	true
+
+					transparent: true,
+					vertexColors: true,
+					alphaToCoverage: true // only works when WebGLRenderer's "antialias" is set to "true"
 				});
 
 				// Galaxy properties
-				var galaxy = new THREE.Geometry();
+				let galaxy = new THREE.BufferGeometry();
+				const positions = [];
+				const colors = [];
+				const sizes = [];
 				
 				for (let i = 0; i < NUM_STARS; ++i) {
 					let starSeed = i << 8 | GALAXY_SEED;
@@ -207,27 +223,23 @@
 					let starData = makeStarBasic(starSeed);
 					starDB[i] = starData;
 					let p = new THREE.Vector3(starData.position.x, starData.position.y, starData.position.z);
-					galaxy.vertices.push(p);
+					positions.push(p.x);
+					positions.push(p.y);
+					positions.push(p.z);
+					let s = starData.size / 100.0;
+					sizes.push(s);
+					let c = new THREE.Color( starData.temperature/16000.0, 1, 1 );
+					colors.push(c.r);
+					colors.push(c.g);
+					colors.push(c.b);
 				}
+				galaxy.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+				galaxy.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
+				galaxy.setAttribute( 'size', new THREE.Float32BufferAttribute( sizes, 1 ).setUsage( THREE.DynamicDrawUsage ) );
 
 				// Create the particle system
-				//https://code.tutsplus.com/tutorials/webgl-with-threejs-textures-particles--net-35836
-				particleSystem = new THREE.ParticleSystem(galaxy, shaderMaterial);
-				particleSystem.sortParticles = true;
+				particleSystem = new THREE.Points( galaxy, shaderMaterial );
 				
-				// Data to send to the shader
-				var vertices = particleSystem.geometry.vertices;
-				var values_size = attributes.size.value;
-				var values_color = attributes.ca.value;
-				console.log("vertices = " + vertices.length);
-
-				// Color variation
-				for( var v = 0; v < vertices.length; v++ ) {
-					let starData = starDB[v];
-					values_size[ v ] = starData.size / 100.0;
-					values_color[ v ] = new THREE.Color( starData.temperature/16000.0, 1, 1 );
-				}
-
 				// Add the particle system to the scene
 				scene.add(particleSystem);
 
@@ -238,7 +250,7 @@
 			function generateCircleTexture() {
 
 				// draw a circle in the center of the canvas
-				var size = 64;
+				var size = 32;
 
 				// create canvas
 				var canvas = document.createElement('canvas');
@@ -253,7 +265,7 @@
 				var centerY = size / 2;
 				var radius = size / 2;
 
-				for(var i = 1; i < 33; i++) {
+				for(var i = 1; i < 11; i++) {
 					context.beginPath();
 					context.arc(centerX, centerY, (radius / 2) + (i / 2), 0, 2 * Math.PI, false);
 					context.fillStyle = "rgba(255, 255, 255, " + (1 / i) + ")";
@@ -263,10 +275,26 @@
 				return canvas;
 			}
 
-			function onWindowResize() {
+			function onDocumentMouseClick(event) {
+				event.preventDefault();
 
-				windowHalfX = window.innerWidth / 2;
-				windowHalfY = window.innerHeight / 2;
+				// Calculate mouse position in normalized device coordinates (-1 to +1) for both components
+				mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+				mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+				// Update the picking ray with the camera and mouse position
+				raycaster.setFromCamera(mouse, camera);
+
+				// Calculate objects intersecting the picking ray
+				var intersects = raycaster.intersectObjects(particleSystem.geometry);
+
+				for (var i = 0; i < intersects.length; i++) {
+					// intersects[i].object is the star that was clicked
+					console.log('Star clicked:', intersects[i].object);
+				}
+			}
+
+			function onWindowResize() {
 
 				camera.aspect = window.innerWidth / window.innerHeight;
 				camera.updateProjectionMatrix();
@@ -277,11 +305,13 @@
 
 			function animate() {
 				
-				//particleSystem.rotation.y += 0.0001;
+				//const time = Date.now() * 0.005;
+				//particleSystem.rotation.z = 0.01 * time;
 
 				controls.update();
 				requestAnimationFrame( animate );
 				render();
+				stats.update();
 			}
 
 			function render() {
