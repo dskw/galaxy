@@ -78,6 +78,16 @@
 				return ~~(randomRangeFloat(rng.double(), min, max));
 			}
 
+			function invertedSCurve(value, min, max) {
+				// Normalize value to [0, 1]
+				let normalized = (value - min) / (max - min);
+
+				// Apply the inverted sigmoid function for a curve that starts at 1 and decreases towards 0
+				let scurved = 1 - 1 / (1 + Math.exp(-10 * (normalized - 0.5)));
+
+				return scurved;
+			}
+
 			function makeStarBasic(seed)
 			{
 				let rng = new alea(seed);
@@ -86,25 +96,26 @@
 				let size = randomRange(rng, 20, 50)*2;
 				let num_planets = randomRange(rng, 0, 5);
 				let name = "star";//generateNameFromWordList(rng.int32(), starNameDB);
-				
-				// Constants for the spiral arms
-				const arms = 5; // Number of arms
-				const starsPerArm = 1000;
+
+				// Calculate the position in the spiral
+				const numArms = 5;
+				const numStars = 5000;
+				const maxDist = 25;
 				const starIndex = seed >> 8;
-				const max_radius = (starsPerArm-1) / 40;
-				const max_distance = max_radius + 2;
 
-				let arm = ~~(starIndex / starsPerArm);
-				let arm_index = starIndex - arm * starsPerArm;
-				let armAngle = 270 / arms;
-				let angle = arm_index / 100 + (armAngle * (arm + 1));
-				let radius = arm_index / 40;
+				let armIndex = starIndex % numArms;
+				let distanceRatio = Math.pow((starIndex / numStars), 3); // Squaring the ratio increases star density towards the center
 
-				let x = radius * Math.cos(angle) + rng.double() * 2;
-				let z = radius * Math.sin(angle) + rng.double() * 2;
+				// Spiral parameters
+				let spiralAngle = armIndex * (2 * Math.PI / numArms) + distanceRatio * 2 * Math.PI;
+				let distanceFromCenter = Math.sqrt(distanceRatio) * maxDist; // We apply the square root to reverse the squaring operation we did earlier
 
-				let distance = Math.sqrt(x * x + z * z);
-				let y = Math.expm1(1 - (distance / max_distance)) * (rng.double()*2-1);
+				let arm_spread = 1-distanceRatio;
+				
+				// Cartesian coordinates calculation
+				let x = distanceFromCenter * Math.cos(spiralAngle) + (rng.double() - 0.5) * 4 * arm_spread + (rng.double() - 0.5);
+				let z = distanceFromCenter * Math.sin(spiralAngle) + (rng.double() - 0.5) * 4 * arm_spread + (rng.double() - 0.5);
+				let y = Math.expm1(1 - (distanceFromCenter / maxDist)) * (rng.double()*2-1);
 
 				return {
 					size: size,
@@ -192,8 +203,8 @@
 
 				//intialize camera
 				camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 10000 );
-				camera.position.z = 6;
-				camera.position.y = 6;
+				camera.position.z = 30;
+				camera.position.y = 30;
 
 				// Add OrbitControls so that we can pan around with the mouse.
 				controls = new THREE.OrbitControls( camera );
