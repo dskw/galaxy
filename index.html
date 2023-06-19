@@ -53,6 +53,11 @@
 
 				return scurved;
 			}
+			
+			function starSeedToIndex(seed)
+			{
+				return seed >> 8;
+			}
 
 			function makeStarBasic(seed)
 			{
@@ -66,7 +71,7 @@
 				// Calculate the position in the spiral
 				const numArms = 5;
 				const maxDist = 25;
-				const starIndex = seed >> 8;
+				const starIndex = starSeedToIndex(seed);
 
 				let armIndex = starIndex % numArms;
 				let distanceRatio = Math.pow((starIndex / NUM_STARS), 3); // Squaring the ratio increases star density towards the center
@@ -90,201 +95,6 @@
 					position: {x:x, y:y, z:z},
 					planets: new Array(num_planets)
 				};
-			}
-		</script>
-
-
-		<script type="x-shader/x-vertex" id="vertexshader">
-
-			attribute float size;
-
-			varying vec3 vColor;
-
-			vec3 star_color(float k) {
-				float T = k*32000.;
-				vec3 c = vec3(1.,3.375,8.)/(exp((19e3*vec3(1.,1.5,2.)/T)) - 1.); // Planck law
-				return c / max(c.r,max(c.g,c.b));  // chrominance
-			}
-
-			void main() {
-				vColor = star_color(color.r);
-
-				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
-
-				gl_PointSize = size * ( 300.0 / -mvPosition.z );
-				//gl_PointSize = size * ( 100.0 / length( mvPosition.xyz ) );
-
-				gl_Position = projectionMatrix * mvPosition;
-			}
-
-		</script>
-
-		<script type="x-shader/x-fragment" id="fragmentshader">
-
-			uniform sampler2D pointTexture;
-
-			varying vec3 vColor;
-
-			void main() {
-
-				gl_FragColor = vec4( vColor, 1.0 );
-
-				gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord );
-
-			}
-
-		</script>
-
-		<script type="module">
-			import * as THREE from 'three';
-			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-			import Stats from 'three/addons/libs/stats.module.js';
-
-			let pickingTexture, pickingScene, controls, camera, scene, renderer, particleSystem, stats;
-
-			const PI2 = Math.PI * 2;
-			const clearColor = new THREE.Color();
-			
-			const GALAXY_SEED = 0;
-			let starDB = [];
-
-
-			init();
-			animate();
-
-			function init() {
-
-				const canvas = document.querySelector('#c');
-				stats = new Stats();
-				document.querySelector('body').appendChild( stats.dom );
-
-				//intialize camera
-				const fov = 75;
-				const aspect = window.innerWidth / window.innerHeight;
-				const near = 0.1;
-				const far = 10000;
-				camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
-				camera.position.z = 20;
-				camera.position.y = 20;
-
-				// Add OrbitControls so that we can pan around with the mouse.
-				controls = new OrbitControls(camera, canvas);
-				controls.update();
-				controls.addEventListener( 'change', render );
-
-				scene = new THREE.Scene();
-				scene.background = new THREE.Color('black');
-
-				pickingTexture = new THREE.WebGLRenderTarget( 1, 1, {
-					type: THREE.IntType,
-					format: THREE.RGBAIntegerFormat,
-					internalFormat: 'RGBA32I',
-				} );
-				
-				// Render the scene.
-  				renderer = new THREE.WebGLRenderer({antialias: true, canvas});
-				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setSize( window.innerWidth, window.innerHeight );
-
-				// Add the event listener for the click event
-				renderer.domElement.addEventListener('click', onDocumentMouseClick, false);
-
-				// Generate the circle texture
-				var circleTexture = new THREE.Texture(generateCircleTexture());
-				circleTexture.needsUpdate = true;
-
-				// Set up the shaders
-				let uniforms = {
-					amplitude: { value: 1.0 },
-					color: { value: new THREE.Color( 0xffffff ) },
-					pointTexture: { value: circleTexture }
-				};
-
-				uniforms.pointTexture.value.wrapS = uniforms.pointTexture.value.wrapT = THREE.RepeatWrapping;
-
-				var shaderMaterial = new THREE.ShaderMaterial( {
-					uniforms: uniforms,
-					vertexShader: document.getElementById( 'vertexshader' ).textContent,
-					fragmentShader: document.getElementById( 'fragmentshader' ).textContent,
-
-					transparent: true,
-					vertexColors: true,
-					alphaToCoverage: true // only works when WebGLRenderer's "antialias" is set to "true"
-				});
-
-				// Galaxy properties
-				let geometry = new THREE.BufferGeometry();
-				const positions = [];
-				const colors = [];
-				const sizes = [];
-				const seeds = new Int16Array( NUM_STARS );
-				
-				for (let i = 0; i < NUM_STARS; ++i) {
-					let starSeed = i << 8 | GALAXY_SEED;
-					//let starSeed = i;
-					let starData = makeStarBasic(starSeed);
-					starDB[i] = starData;
-					let p = new THREE.Vector3(starData.position.x, starData.position.y, starData.position.z);
-					positions.push(p.x);
-					positions.push(p.y);
-					positions.push(p.z);
-					let s = starData.size / 100.0;
-					sizes.push(s);
-					let c = new THREE.Color( starData.temperature/16000.0, 1, 1 );
-					colors.push(c.r);
-					colors.push(c.g);
-					colors.push(c.b);
-					seeds[i] = starSeed;
-				}
-				geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
-				geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
-				geometry.setAttribute( 'size', new THREE.Float32BufferAttribute( sizes, 1 ).setUsage( THREE.DynamicDrawUsage ) );
-
-				const bufferAttribute = new THREE.Int16BufferAttribute( seeds, 1, false );
-				bufferAttribute.gpuType = THREE.IntType;
-				geometry.setAttribute( 'id', bufferAttribute );
-
-				// Create the particle system
-				particleSystem = new THREE.Points( geometry, shaderMaterial );
-				
-				// Add the particle system to the scene
-				scene.add(particleSystem);
-
-				
-				const pickingMaterial = new THREE.ShaderMaterial( {
-
-					glslVersion: THREE.GLSL3,
-					uniforms: uniforms,
-
-					vertexShader: /* glsl */`
-						attribute int id;
-						flat varying int vid;
-						void main() {
-
-							vid = id;
-							gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
-
-						}
-					`,
-
-					fragmentShader: /* glsl */`
-						layout(location = 0) out int out_id;
-						flat varying int vid;
-
-						void main() {
-
-							out_id = vid;
-
-						}
-					`,
-
-				} );
-				// set up the picking texture to use a 32 bit integer so we can write and read integer ids from it
-				pickingScene = new THREE.Scene();
-				pickingScene.add( new THREE.Mesh( geometry, pickingMaterial ) );
-
-				// Resize listener
-				window.addEventListener( 'resize', onWindowResize, false );
 			}
 
 			function generateCircleTexture() {
@@ -314,44 +124,175 @@
 
 				return canvas;
 			}
+		</script>
 
-			function onDocumentMouseClick(event) {
-				event.preventDefault();
 
-				// Create a 2D vector for the mouse position
-				var pointer = new THREE.Vector2();
+		<script type="x-shader/x-vertex" id="vertexshader">
+
+			attribute float size;
+			attribute int seed;
+			attribute int selected;
+
+			varying vec3 vColor;
+
+			vec3 star_color(float k) {
+				float T = k*32000.;
+				vec3 c = vec3(1.,3.375,8.)/(exp((19e3*vec3(1.,1.5,2.)/T)) - 1.); // Planck law
+				return c / max(c.r,max(c.g,c.b));  // chrominance
+			}
+	
+			void main() {
+				vColor = star_color(color.r);
+
+				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+				gl_PointSize = size * ( 300.0 / -mvPosition.z );
+				gl_PointSize *= float(selected) + 1.0;
+				//gl_PointSize = size * ( 100.0 / length( mvPosition.xyz ) );
+				gl_Position = projectionMatrix * mvPosition;
+			}
+
+		</script>
+
+		<script type="x-shader/x-fragment" id="fragmentshader">
+
+			uniform sampler2D pointTexture;
+
+			varying vec3 vColor;
+
+			void main() {
+				gl_FragColor = vec4( vColor, 1.0 );
+				gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord );
+				if (distance(gl_PointCoord, vec2(0.5)) > 0.5) discard;
+			}
+
+		</script>
+
+		<script type="module">
+			import * as THREE from 'three';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let controls, camera, scene, renderer, particleSystem, stats;
+			let raycaster, intersects;
+			let pointer, INTERSECTED;
+
+			const PI2 = Math.PI * 2;
+			const clearColor = new THREE.Color( -1, -1, -1 );
+			
+			const GALAXY_SEED = 0;
+			let starDB = [];
+
+
+			init();
+			animate();
+
+			function init() {
+
+				const canvas = document.querySelector('#c');
+				stats = new Stats();
+				document.querySelector('body').appendChild( stats.dom );
+
+				//intialize camera
+				const fov = 75;
+				const aspect = window.innerWidth / window.innerHeight;
+				const near = 0.1;
+				const far = 10000;
+				camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+				camera.position.z = 3;
+				camera.position.y = 3;
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color('black');
+				
+				// Render the scene.
+  				renderer = new THREE.WebGLRenderer({antialias: true, canvas});
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				// Generate the circle texture
+				var circleTexture = new THREE.Texture(generateCircleTexture());
+				circleTexture.needsUpdate = true;
+
+				// Set up the shaders
+				let uniforms = {
+					//amplitude: { value: 1.0 },
+					color: { value: new THREE.Color( 0xffffff ) },
+					pointTexture: { value: circleTexture },
+					alphaTest: { value: 0.9 }
+				};
+
+				var shaderMaterial = new THREE.ShaderMaterial( {
+					uniforms: uniforms,
+					vertexShader: document.getElementById( 'vertexshader' ).textContent,
+					fragmentShader: document.getElementById( 'fragmentshader' ).textContent,
+
+					transparent: true,
+					vertexColors: true,
+					alphaToCoverage: true // only works when WebGLRenderer's "antialias" is set to "true"
+				});
+
+				// Galaxy properties
+				let geometry = new THREE.BufferGeometry();
+				const positions = [];
+				const colors = [];
+				const sizes = [];
+				const seeds = new Uint32Array( NUM_STARS );
+				const selected = new Int16Array( NUM_STARS );
+				
+				for (let i = 0; i < NUM_STARS; ++i) {
+					let starSeed = i << 8 | GALAXY_SEED;
+					let starData = makeStarBasic(starSeed);
+					starDB[i] = starData;
+					let p = new THREE.Vector3(starData.position.x, starData.position.y, starData.position.z);
+					positions.push(p.x);
+					positions.push(p.y);
+					positions.push(p.z);
+					let s = starData.size / 100.0;
+					sizes.push(s);
+					let c = new THREE.Color( starData.temperature/16000.0, 1, 1 );
+					colors.push(c.r);
+					colors.push(c.g);
+					colors.push(c.b);
+					seeds[i] = starSeed;
+					selected[i] = 0;
+				}
+				geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+				geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
+				geometry.setAttribute( 'size', new THREE.Float32BufferAttribute( sizes, 1 ));
+				
+				const seedAttribute = new THREE.Uint32BufferAttribute( seeds, 1 );
+				seedAttribute.gpuType = THREE.UnsignedIntType;
+				geometry.setAttribute( 'seed', seedAttribute );
+
+				const selectedAttribute = new THREE.Int16BufferAttribute( selected, 1 ).setUsage( THREE.DynamicDrawUsage );
+				selectedAttribute.gpuType = THREE.IntType;
+				geometry.setAttribute( 'selected', selectedAttribute );
+				
+				// Create the particle system
+				particleSystem = new THREE.Points( geometry, shaderMaterial );
+				
+				// Add the particle system to the scene
+				scene.add(particleSystem);
+				
+				raycaster = new THREE.Raycaster();
+				pointer = new THREE.Vector2();
+
+				// Add the event listener for the click event
+				renderer.domElement.addEventListener( 'pointermove', onPointerMove );
+
+				// Add OrbitControls so that we can pan around with the mouse.
+				controls = new OrbitControls(camera, canvas);
+				controls.update();
+				controls.addEventListener( 'change', render );
+				
+				// Resize listener
+				window.addEventListener( 'resize', onWindowResize, false );
+			}
+
+			function onPointerMove(event) {
 				// Calculate mouse position in normalized device coordinates (-1 to +1) for both components
-				pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-				pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
-
-				// render the picking scene off-screen
-				// set the view offset to represent just a single pixel under the mouse
-				const dpr = window.devicePixelRatio;
-				camera.setViewOffset(
-					renderer.domElement.width, renderer.domElement.height,
-					Math.floor( pointer.x * dpr ), Math.floor( pointer.y * dpr ),
-					1, 1
-				);
-
-				// render the scene
-				renderer.setRenderTarget( pickingTexture );
-
-				// clear the background to - 1 meaning no item was hit
-				clearColor.setRGB( - 1, - 1, - 1 );
-				renderer.setClearColor( clearColor );
-				renderer.render( pickingScene, camera );
-
-				// clear the view offset so rendering returns to normal
-				camera.clearViewOffset();
-
-				// create buffer for reading single pixel
-				const pixelBuffer = new Int32Array( 4 );
-
-				// read the pixel
-				renderer.readRenderTargetPixels( pickingTexture, 0, 0, 1, 1, pixelBuffer );
-
-				const starSeed = pixelBuffer[ 0 ];
-				console.log(starSeed);
+				pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+				pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
 			}
 
 			function onWindowResize() {
@@ -360,25 +301,61 @@
 				camera.updateProjectionMatrix();
 
 				renderer.setSize( window.innerWidth, window.innerHeight );
-
 			}
 
 			function animate() {
+				requestAnimationFrame( animate );
 				
 				//const time = Date.now() * 0.005;
-				//particleSystem.rotation.z = 0.01 * time;
+				//particleSystem.rotation.y = 0.01 * time;
 
 				controls.update();
-				requestAnimationFrame( animate );
 				render();
 				stats.update();
 			}
 
-			function render() {
-				// camera.lookAt(scene.position);
-				renderer.setRenderTarget( null );
-				renderer.render( scene, camera );
+			function checkPointer() {
+				const geometry = particleSystem.geometry;
+				const attributes = geometry.attributes;
 
+				raycaster.setFromCamera( pointer, camera );
+
+				intersects = raycaster.intersectObject( particleSystem );
+				
+				let starSeed = -1;
+
+				if ( intersects.length > 0 ) {
+
+					if ( INTERSECTED != intersects[ 0 ].index ) {
+
+						attributes.selected.array[ INTERSECTED ] = 0;
+
+						INTERSECTED = intersects[ 0 ].index;
+
+						starSeed = attributes.seed.array[ INTERSECTED ];
+						attributes.selected.array[ INTERSECTED ] = 1;
+						attributes.selected.needsUpdate = true;
+
+					}
+
+				} else if ( INTERSECTED !== null ) {
+
+					attributes.selected.array[ INTERSECTED ] = 0;
+					attributes.selected.needsUpdate = true;
+					INTERSECTED = null;
+
+				}
+				
+				if (starSeed == -1)
+					return;
+				console.log(starSeed);
+			}
+
+			function render() {
+				checkPointer();
+			
+				// camera.lookAt(scene.position);
+				renderer.render( scene, camera );
 			}
 
 			function rand() {
